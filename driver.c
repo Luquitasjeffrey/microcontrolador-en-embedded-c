@@ -38,7 +38,9 @@ void DWrite(uint8_t pin, bool mode){
 }
 
 bool DRead(uint8_t pin){
-    return (PORTB&pin)>0;
+    bool ret=(PORTB&pin)>0;
+    DWrite(pin, OFF);
+    return ret;
 }
 
 void Pmode(uint8_t pin, bool mode){
