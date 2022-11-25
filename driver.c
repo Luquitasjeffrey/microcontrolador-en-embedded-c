@@ -1,4 +1,10 @@
-#define __AVR_ATmega328P__ //el driver para el arduino nano
+//ATmega328P el microcontroller para el arduino nano
+/*
+avr-gcc -Os -mmcu=atmega328p driver.c -o driver
+*/
+
+//pulsador 1: pause
+//pulsador 2: reset
 #include <avr/io.h>
 #define F_CPU 1600000000
 #include <avr/delay.h>
@@ -12,35 +18,26 @@
 #define OFF 0
 
 #define PAUSE      0b00100000
-#define VALV_VAPOR 0b10000000
+#define VENTILADOR 0b10000000
 #define QUEMADOR   0b10000000
 #define BUZZER     0b00001000
 #define SYS_PAUSE  0b00000100
 #define RESET      0b00010000
-#define VENTILADOR 0b00000010
+#define VALV_VAPOR 0b00000010
 #define ADD        0b00000001
 #define SUB        0b01000000
-
-/*
-avr-gcc -Os -mmcu=atmega328p driver.c -o driver
-*/
-
-//pulsador 1: pause
-//pulsador 2: reset
 
 
 void DWrite(uint8_t pin, bool mode){
     if(mode){
-        PORTB|=pin;
+        PORTB|=pin;//PORTB es el register del output en el puerto b
         return;
     }
     PORTB&=(~pin);
 }
 
 bool DRead(uint8_t pin){
-    bool ret=(PORTB&pin)>0;
-    DWrite(pin, OFF);
-    return ret;
+    return (PINB&pin)!=0;//PINB es el register del input en el puerto b
 }
 
 void Pmode(uint8_t pin, bool mode){
@@ -52,11 +49,23 @@ void Pmode(uint8_t pin, bool mode){
 }
 
 void InitDisplay(){
-    DDRC=0b01111111;
+    DDRD=0b01111111;
 }
 
 void display(uint32_t tiempo){
-    #define C PORTC
+    #define C PORTD //me convenia usar puerto D jaja
+
+    /*
+    El puerto D se divide en 8 bits, a saber
+    0b"<puerto 0><puerto 1><puerrto2><puerto 3><puerto 4><puerrto5><puerto 6><puerto 7>"
+    ej:
+    Si C=0b01010101;
+    <Puerto 0 = OFF> <puerto 1 = ON> <puerto 2 = OFF> <puerto 3 = on> ...
+    asi siguiendo con el numero binario que le asigne a C que representa el puerto D
+    1 significa ON
+    0 significa OFF
+    */
+
     switch(tiempo){
         case 0:
             C=0b01111110;
@@ -117,23 +126,26 @@ void display(uint32_t tiempo){
 
 bool __main(uint32_t tiempo){
 
-    DWrite(QUEMADOR, ON);//son el mismo pin
+    //DWrite(QUEMADOR, ON);//son el mismo pin
     DWrite(VENTILADOR, ON);
     uint32_t i=0;
     bool doitagain=1;
 task:
     for(; i<((tiempo*3)/4); i++){//75% del tiempo
-        _delay_ms(500);
+        _delay_ms(1000);
         if(DRead(SYS_PAUSE)){
-            DWrite(SYS_PAUSE, OFF);//para evitar un loop infinito
+            _delay_ms(50); //por si llegaba a quedar algo de corriente para que se desactive el puerto b
             while(!DRead(SYS_PAUSE)){
+                _delay_ms(50);
                 if(DRead(ADD)){
                     tiempo++;
                     display(tiempo);
+                    continue;
                 }
                 if(DRead(SUB)){
                     tiempo--;
                     display(tiempo);
+                    continue;
                 }
                 if(DRead(RESET)){
                     return EXIT_FALUIRE;
@@ -143,8 +155,7 @@ task:
         if(DRead(RESET)){
             return EXIT_FALUIRE;
         }
-        _delay_ms(500);
-        display(tiempo);
+        display(i);
     }
     if(doitagain){
         DWrite(VALV_VAPOR, ON);
@@ -167,29 +178,19 @@ void __init__(){
     Pmode(SUB, INPUT_MODE);
     Pmode(RESET, INPUT_MODE);
     //poner todos los registros que voy a usar en cero
-    DWrite(VALV_VAPOR, OFF);
-    DWrite(QUEMADOR, OFF);
-    DWrite(BUZZER, OFF);
-    DWrite(SYS_PAUSE, OFF);
-    DWrite(VENTILADOR, OFF);
-    DWrite(SUB, OFF);
-    DWrite(ADD, OFF);
-    DWrite(SYS_PAUSE, OFF);
-    DWrite(RESET, OFF);
-
+    DDRB=0;
     //inicializar el display
     InitDisplay();
 }
 
-int main(){
-
+int main(void){
     __init__();
     uint32_t tiempo=10;
     while(!DRead(SYS_PAUSE));
     while(!__main(tiempo)){
-        __init__();
+        DDRB=0;
     }
-    __init__();//solo para resetear todo en cero y apagar todo
+    DDRB=0;//solo para resetear todo en cero y apagar todo
     DWrite(BUZZER, ON);
     _delay_ms(10000);//10000 ms=10 sec
     DWrite(BUZZER, OFF);//apago el buzzer
